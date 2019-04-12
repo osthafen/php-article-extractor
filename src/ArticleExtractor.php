@@ -218,6 +218,8 @@ class ArticleExtractor {
   			// Get the HTML from goose
   			$html_string = $article->getRawHtml();
 
+			$this->log_debug("Parsing via: custom method");
+
   			//$this->log_debug("---- RAW HTML -----------------------------------------------------------------------------------");
   			//$this->log_debug($html_string);
   			//$this->log_debug("-------------------------------------------------------------------------------------------------");
@@ -400,7 +402,9 @@ class ArticleExtractor {
 
 					$curl->close();
 
-					sleep(300);
+					$this->log_debug('Error - sleeping then try again.');
+
+					sleep(5);
 
 					$curl = $this->curl_connect($parsed_url['host']);
 
