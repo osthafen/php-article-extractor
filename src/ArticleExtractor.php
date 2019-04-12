@@ -414,10 +414,6 @@ class ArticleExtractor {
 
 		$this->log_debug('Final Url: ' . $curl->getInfo(CURLINFO_EFFECTIVE_URL));
 
-if ($url == "https://t.co/kwb19AGfxl") {
-
-	print_r($curl);
-}
 		return $curl;
 
 	}

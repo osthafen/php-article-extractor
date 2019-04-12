@@ -53,8 +53,6 @@ class ExtractorTest extends TestCase {
 
 			$result = $parser->processURL($url);
 
-			//print_r($result);
-
 			$this->assertNotEmpty($result['title']);
 			$this->assertNotEmpty($result['text']);
 			$this->assertNotEmpty($result['language']);
