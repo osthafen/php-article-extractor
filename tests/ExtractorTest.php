@@ -1,6 +1,7 @@
 <?php
 
-use Cscheide\ArticleExtractor\ArticleExtractor;
+use Osthafen\ArticleExtractor\ArticleExtractor;
+
 use PHPUnit\Framework\TestCase;
 
 class ExtractorTest extends TestCase {
@@ -16,7 +17,7 @@ class ExtractorTest extends TestCase {
 		'https://www.worldjournal.com/5683780/article-小唐納傳會女俄諜操控者-檢方：fbi有音檔/?ref=首頁_今日重點',	// Chinese
 		'http://www.dn.pt/sociedade/interior/ele-e-uma-estrela-pop-ele-e-o-papa-do-povo-8472352.html',  // Portuguese
 		'https://hbr.org/2017/03/the-promise-of-blockchain-is-a-world-without-middlemen',				// Requires remote language check
-		'https://abcnews.go.com/Politics/wireStory/trump-tweets-nice-note-north-koreas-kim-jong-56544275',
+		//404 'https://abcnews.go.com/Politics/wireStory/trump-tweets-nice-note-north-koreas-kim-jong-56544275',
 		'http://kotaku.com/nintendo-switch-the-kotaku-review-1792776350?utm_source=pocket&utm_medium=email&utm_campaign=pockethits',
 		'http://futurememes.blogspot.jp/2017/01/cognitive-easing-human-identity-crisis.html?m=1',
 		'https://medium.com/personal-growth/thank-god-i-dont-have-a-job-ae2fcb6c096e',
@@ -51,6 +52,9 @@ class ExtractorTest extends TestCase {
 			echo "Testing: " . $url . "\n";
 
 			$result = $parser->processURL($url);
+
+			//print_r($result);
+
 			$this->assertNotEmpty($result['title']);
 			$this->assertNotEmpty($result['text']);
 			$this->assertNotEmpty($result['language']);

@@ -1,10 +1,10 @@
 <?php
 
-namespace Cscheide\ArticleExtractor;
+namespace Osthafen\ArticleExtractor;
 
 use Goose\Client as GooseClient;
 
-use GuzzleHttp\Client as GuzzleClient;
+use Curl\Curl;
 
 use andreskrey\Readability\Readability;
 use andreskrey\Readability\Configuration;
@@ -14,26 +14,18 @@ use PHPHtmlParser\Dom;
 use PHPHtmlParser\Dom\HtmlNode;
 use PHPHtmlParser\Dom\TextNode;
 
-use DetectLanguage\DetectLanguage;
+use LanguageDetection\Language;
 
 class ArticleExtractor {
 
 	// Debug flag - set to true for convenience during development
-	private $debug = false;
+	private $debug = true;
 
 	// Valid root elements we want to search for
 	private $valid_root_elements = [ 'body', 'form', 'main', 'div', 'ul', 'li', 'table', 'span', 'section', 'article', 'main'];
 
 	// Elements we want to place a space in front of when converting to text
 	private $space_elements = ['p', 'li'];
-
-	// API key for the remote detection service
-	private $api_key = null;
-
-	public function __construct($api_key = null) {
-		$this->api_key = $api_key;
-	}
-
 
   /**
    * Provided for backward compatibility.
@@ -65,26 +57,39 @@ class ArticleExtractor {
 	 */
 	public function processURL($url) {
 
-		// Check for redirects first
-		$url = $this->checkForRedirects($url);
+		$results = [];
 
-    $this->log_debug("Attempting to parse " . $url);
+		$results['text'] == null;
+		$results['language'] = null;
+		$results['language_method'] = null;
+		$results['html'] = null;
 
-    // First attempt to parse the URL into the structure we want
-    $results = $this->parseViaReadability($url);
+		$curl = $this->checkMetaRefresh($url);
 
-    // If we don't see what we want, try our other method
-    if ($results['text'] == null) {
-      $results = $this->parseViaGooseOrCustom($url);
-    }
+		if (!$curl) return $results;
 
-    // If we still don't havewhat we want, return what we have
-    if ($results['text'] == null) {
-      $results['language'] = null;
-      $results['language_method'] = null;
-      unset($results['html']); // remove raw HTML before returning it
-      return $results;
-    }
+		$url = $curl->getInfo(CURLINFO_EFFECTIVE_URL); //get redirected url
+
+		$content = $curl->response;
+
+		$curl->close();
+
+
+		$this->log_debug("Attempting to parse " . $url);
+
+		// First attempt to parse the URL into the structure we want
+		$results = $this->parseViaReadability($content);
+
+		// If we don't see what we want, try our other method
+		if ($results['text'] == null) {
+		  $results = $this->parseViaGooseOrCustom($url, $content);
+		}
+
+		// If we still don't havewhat we want, return what we have
+		if ($results['text'] == null) {
+		  unset($results['html']); // remove raw HTML before returning it
+		  return $results;
+		}
 
     // Otherwise, continue on...
 
@@ -104,18 +109,28 @@ class ArticleExtractor {
 		$results['title'] = $this->shiftEncodingToUTF8($results['title']);
 		$results['text'] = $this->shiftEncodingToUTF8($results['text']);
 
-		// If we've got some text, we still don't have a language, and we're configured with an API key...
-		if ($results['text'] != null && !isset($results['language']) && $this->api_key != null) {
+		// If we've got some text, we still don't have a languag
+		if ($results['text'] != null && !isset($results['language']) ) {
 
-      // Then use the service to detect the language
-			$results['language_method'] = "service";
-			$results['language'] = $this->identifyLanguage(mb_substr($results['text'],0,100));
-			$this->log_debug("Language was detected as  " . $results['language'] . " from service");
+			$languageDetector = new Language;
+
+			$language = $languageDetector->detect(mb_substr($results['text'],0,500))->bestResults()->close();
+
+			if (is_array($language)) {
+
+				$language = key($language);
+
+			}
+
+			// Then use the patrickschur class to detect the language
+			$results['language_method'] = "class";
+			$results['language'] = $language;
+			$this->log_debug("Language was detected as  " . $language . " from class");
 		}
 		else {
-			$this->log_debug("Skipping remote language detection service check");
-      $results['language_method'] = null;
-      $results['language'] = null;
+			$this->log_debug("Skipping class language detection");
+      		//$results['language_method'] = null;
+      		//$results['language'] = null;
 		}
 
 		$this->log_debug("text: " . $results['text']);
@@ -141,17 +156,17 @@ class ArticleExtractor {
    *
    * Parsing can be considered unavailable if 'text' is returned as null
 	 */
-  private function parseViaReadability($url) {
+  private function parseViaReadability($content) {
 
     $text = null;
     $title = null;
-		$method = "readability";
+	$method = "readability";
 
     $readability = new Readability(new Configuration(['SummonCthulhu'=>true]));
 
     try {
-      $html = file_get_contents($url);
-      $readability->parse($html);
+
+      $readability->parse($content);
       $title = $readability->getTitle();
       $text = $readability->getContent();
       $text = strip_tags($text); // Remove all HTML tags
@@ -164,7 +179,7 @@ class ArticleExtractor {
       $this->log_debug('parseViaReadability: Error processing text', $e->getMessage());
     }
 
-    return ['parse_method'=>$method, 'title'=>$title, 'text'=>$text, 'html'=>$html];
+    return ['parse_method'=>$method, 'title'=>$title, 'text'=>$text, 'html'=>$content];
 
   }
 
@@ -180,10 +195,10 @@ class ArticleExtractor {
    *
    * Parsing can be considered unavailable if 'text' is returned as null
 	 */
-  private function parseViaGooseOrCustom($url) {
+  private function parseViaGooseOrCustom($url, $content) {
 
     $text = null;
-		$method = "goose";
+    $method = "goose";
     $title = null;
     $html = null;
 
@@ -193,7 +208,7 @@ class ArticleExtractor {
 		$goose = new GooseClient(['image_fetch_best' => false]);
 
     try {
-      $article = $goose->extractContent($url);
+      $article = $goose->extractContent($url, $content);
       $title = $article->getTitle();
       $html = $article->getRawHtml();
 
@@ -319,34 +334,124 @@ class ArticleExtractor {
 
 	}
 
-	/**
-	 * Checks for redirects given a URL. Will return the ultimate final URL if found within
-	 * 5 redirects. Otherwise, it will return the last url it found and log too many redirects
-	 */
-	private function checkForRedirects($url, $count = 0) {
-		$this->log_debug("Checking for redirects on " . $url . " count " . $count);
 
-		if ($count > 5) {
-			$this->log_debug("Too many redirects");
-			return $url;
-		}
+	private function curl_connect($host)
+	{
+		$ip = gethostbyname($host);
 
-		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, $url);
-		curl_setopt($ch, CURLOPT_HEADER, true);
-		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-		$a = curl_exec($ch);
+		$curl = new Curl();
 
-		if(preg_match('#[Ll]ocation: (.*)#', $a, $r)) {
-			$new_url = trim($r[1]);
-			$this->log_debug("Redirect found to: " . $new_url);
-			return $this->checkForRedirects($new_url, $count+1);
-		}
-		else {
-			return $url;
-		}
+		$cookie_file = tempnam(sys_get_temp_dir(), 'ArticleExtractor_');
+		$curl->setCookieJar($cookie_file);
+		$curl->setCookieFile($cookie_file);
+		$curl->setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_2) AppleWebKit/601.3.9 (KHTML, like Gecko) Version/9.0.2 Safari/601.3.9');
+
+		$curl->setOpt(CURLOPT_SSL_VERIFYHOST, false);
+		$curl->setOpt(CURLOPT_SSL_VERIFYPEER, false);
+		$curl->setOpt(CURLOPT_FOLLOWLOCATION, true);
+		$curl->setOpt(CURLOPT_RETURNTRANSFER, true);
+		$curl->setOpt(CURLOPT_MAXREDIRS, 5);
+
+		$curl->setOpt(CURLOPT_RESOLVE, array($host . ":80:" . $ip, $host . ":443:" . $ip));
+
+		return $curl;
 	}
+
+	private function webpage_get_contents($url) {
+
+		$parsed_url = parse_url($url);
+
+		$curl = $this->curl_connect($parsed_url['host']);
+
+		$error_counter = 0;
+
+		do {
+
+			$this->log_debug('Loading page: ' . $url);
+
+			$curl->setReferrer($parsed_url['host']);
+			$curl->get($url);
+
+			if ($curl->error) {
+
+				if ($curl->errorCode == 404) {
+
+					$this->log_debug('Error: ' . $curl->errorCode . ': ' . $curl->errorMessage);
+
+					$curl->close();
+
+					return false;
+				}
+				else {
+
+					$this->log_debug('Error: ' . $curl->errorCode . ': ' . $curl->errorMessage);
+
+					$error_counter++;
+
+					if ($error_counter == 3) {
+
+						$this->log_debug('Error - stopping after ' . $error_counter . ' retries: ' . $curl->errorMessage);
+
+						$curl->close();
+
+						return false;
+
+					}
+
+					$curl->close();
+
+					sleep(300);
+
+					$curl = $this->curl_connect($parsed_url['host']);
+
+					continue;
+
+				}
+
+			}
+
+		} while (!$curl->response);
+
+		$this->log_debug('Final Url: ' . $curl->getInfo(CURLINFO_EFFECTIVE_URL));
+
+if ($url == "https://t.co/kwb19AGfxl") {
+
+	print_r($curl);
+}
+		return $curl;
+
+	}
+
+	private function checkMetaRefresh($url, $maximumRedirections = 5, $currentRedirection = 0)
+	{
+		$result = false;
+
+		$contents = $this->webpage_get_contents($url);
+
+		// Check if we need to go somewhere else
+
+		if (isset($contents->response) && is_string($contents->response) && strlen($contents->response) < 500)
+		{
+			preg_match_all('/<[\s]*meta[\s]*http-equiv="?REFRESH"?' . '[\s]*content="?[0-9]*;[\s]*URL[\s]*=[\s]*([^>"]*)"?' . '[\s]*[\/]?[\s]*>/si', $contents->response, $match);
+
+			if (isset($match) && is_array($match) && count($match) == 2 && count($match[1]) == 1)
+			{
+				if (!isset($maximumRedirections) || $currentRedirection < $maximumRedirections)
+				{
+					return $this->checkMetaRefresh($match[1][0], $maximumRedirections, ++$currentRedirection);
+				}
+
+				$result = false;
+			}
+			else
+			{
+				$result = $contents;
+			}
+		}
+
+		return $contents;
+	}
+
 
 	/**
 	 * Shifts encoding to UTF if needed
@@ -484,38 +589,6 @@ class ArticleExtractor {
 		return $text;
 	}
 
-
-	/**
-	 * Identifies the language received in the UTF-8 text using the DetectLanguage API key.
-	 * Returns false if the language could not be identified and the ISO code if it can be
-	 */
-	private function identifyLanguage($text) {
-		$this->log_debug("identifyLanguage: " . $text);
-
-		if ($this->api_key == null) {
-			$this->log_debug("identifyLanguage: Cannot detect language. No api key passed in");
-			return false;
-		}
-
-    	try {
-			// Set the API key for detect language library
-			DetectLanguage::setApiKey($this->api_key);
-
-			// Detect the language
-			$languageCode = DetectLanguage::simpleDetect($text);
-
-			if ($languageCode == null) {
-				return false;
-			}
-			else {
-				return $languageCode;
-			}
-		}
-		catch (\Exception $e) {
-			$this->log_debug("identifyLanguage: Error with DetectLanguage routine. Returning false: Message is " . $e->getMessage());
-			return false;
-		}
-	}
 
 	/**
 	 * Checks the passed in HTML for any hints within the HTML for language. Should

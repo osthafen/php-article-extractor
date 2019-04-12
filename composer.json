@@ -1,5 +1,5 @@
 {
-    "name": "crscheid/php-article-extractor",
+    "name": "osthafen/php-article-extractor",
     "description": "An HTML article extractor for PHP",
     "keywords": ["parse", "HTML", "extract"],
     "license": "MIT",
@@ -11,17 +11,18 @@
     ],
     "require": {
       "php": ">=5.5",
-	    "scotteh/php-goose": "dev-master",
+      "scotteh/php-goose": "^1.0",
       "thesoftwarefanatics/php-html-parser": "^1.8.0",
-      "detectlanguage/detectlanguage": "2.*",
-      "andreskrey/readability.php": "^1.2.0"
+      "patrickschur/language-detection": "^3.2",
+      "andreskrey/readability.php": "^2.0",
+      "php-curl-class/php-curl-class": "^8.5"
     },
     "require-dev": {
         "phpunit/phpunit": "^6.0"
     },
     "autoload": {
         "psr-4": {
-            "Cscheide\\ArticleExtractor\\": "src"
+            "Osthafen\\ArticleExtractor\\": "src"
         }
     }
 }
