@@ -59,7 +59,7 @@ class ArticleExtractor {
 
 		$results = [];
 
-		$results['text'] == null;
+		$results['text'] = null;
 		$results['language'] = null;
 		$results['language_method'] = null;
 		$results['html'] = null;
